@@ -4,8 +4,11 @@ import json
 import asyncio
 import random
 import os
+import time
+import re
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from discord.ext import commands
+from discord.ext import commands, tasks
 from message_memory import MessageMemory
 
 load_dotenv()
@@ -31,7 +34,7 @@ class DiscordSelfBot:
         self.max_history_length = 25
         
         self.trigger_words = [
-            "eyesore", "sinmoneyz", "poopey peepy"
+            "eyesore", "sinmoneyz", "sin", "moneyz", "poopey peepy"
         ]
         
         self.message_memory = MessageMemory(
@@ -39,8 +42,186 @@ class DiscordSelfBot:
             max_memory_items=1000
         )
         
+        self.last_typing_time = 0
+        self.last_voice_activity = 0
+        self.last_status_change = 0
+        self.last_random_message = 0
+        self.last_typo_time = 0
+        self.is_asleep = False
+        self.last_sleep_check = 0
+        
+        self.typo_chance = 0.05
+        self.last_typo_message_id = None
+        
+        self.cross_ref_memory = {}
+        
     def get_random_model(self):
         return random.choice(self.available_models)
+    
+    def get_est_hour(self):
+        est_offset = -5
+        utc_now = datetime.utcnow()
+        est_now = utc_now + timedelta(hours=est_offset)
+        return est_now.hour
+    
+    def get_response_delay(self):
+        current_hour = self.get_est_hour()
+        
+        if 22 <= current_hour or current_hour <= 6:
+            base_delay = random.uniform(3, 8)
+        elif 7 <= current_hour <= 9:
+            base_delay = random.uniform(2, 6)
+        elif 10 <= current_hour <= 16:
+            base_delay = random.uniform(4, 10)
+        elif 17 <= current_hour <= 21:
+            base_delay = random.uniform(1, 5)
+        else:
+            base_delay = random.uniform(2, 7)
+        
+        variation = random.uniform(-1, 2)
+        final_delay = max(0.5, base_delay + variation)
+        
+        return final_delay
+    
+    def should_be_asleep(self):
+        current_hour = self.get_est_hour()
+        
+        return 23 <= current_hour or current_hour <= 6
+    
+    def get_typo(self, text):
+        if random.random() > self.typo_chance:
+            return text, False
+        
+        words = text.split()
+        if len(words) < 2:
+            return text, False
+        
+        typo_index = random.randint(1, max(1, len(words) - 2))
+        
+        word = words[typo_index]
+        if len(word) < 3:
+            return text, False
+        
+        typo_patterns = [
+            lambda w: w[:2] + w[1:],
+            lambda w: w[:-2] + w[-1],
+            lambda w: w[0] + w[0] + w[1:],
+            lambda w: w[:len(w)//2] + w[len(w)//2:],
+        ]
+        
+        typo_func = random.choice(typo_patterns)
+        typo_word = typo_func(word)
+        
+        words[typo_index] = typo_word
+        typo_text = ' '.join(words)
+        
+        return typo_text, True
+    
+    def get_real_life_reference(self):
+        references = [
+            "gotta finish this math homework",
+            "school was rough today",
+            "just got back from school",
+            "need to study for a test",
+            "homework is killing me",
+            "teachers are being extra today",
+            "just finished eating",
+            "parents are bugging me",
+            "gotta do chores",
+            "just got online after school",
+            "trying to finish assignments",
+            "got detention today",
+            "just finished gaming session"
+        ]
+        
+        if random.random() < 0.1:
+            return f" {random.choice(references)} lol"
+        return ""
+    
+    def get_cross_reference_context(self, channel_id, user_name):
+        if time.time() - self.last_typing_time < 300:
+            return ""
+        
+        other_channel_messages = []
+        for ch_id, history in self.conversation_history.items():
+            if ch_id != channel_id:
+                for msg in history[-10:]:
+                    if msg.get('user_name') == user_name:
+                        other_channel_messages.append(msg['content'])
+        
+        if other_channel_messages:
+            recent_msg = other_channel_messages[-1]
+            if len(recent_msg) > 10:
+                return f" btw i saw you said '{recent_msg[:50]}...' earlier"
+        
+        return ""
+    
+    async def update_status_randomly(self):
+        if time.time() - self.last_status_change < 1800:
+            return
+        
+        if random.random() < 0.1:
+            statuses = [
+                discord.Status.online,
+                discord.Status.idle,
+                discord.Status.dnd
+            ]
+            
+            if self.should_be_asleep():
+                statuses.append(discord.Status.offline)
+            
+            new_status = random.choice(statuses)
+            await self.bot.change_presence(status=new_status)
+            self.last_status_change = time.time()
+    
+    async def join_random_voice_channel(self):
+        if time.time() - self.last_voice_activity < 3600:
+            return
+        
+        if random.random() < 0.15:
+            guilds = self.bot.guilds
+            if not guilds:
+                return
+            
+            guild = random.choice(guilds)
+            voice_channels = [ch for ch in guild.voice_channels if len(ch.members) > 1]
+            
+            if voice_channels:
+                channel = random.choice(voice_channels)
+                try:
+                    await channel.connect()
+                    self.last_voice_activity = time.time()
+                    
+                    duration = random.randint(120, 900)
+                    await asyncio.sleep(duration)
+                    
+                    voice_client = self.bot.voice_clients[0] if self.bot.voice_clients else None
+                    if voice_client:
+                        await voice_client.disconnect()
+                        
+                except Exception as e:
+                    print(f"Failed to join voice channel: {e}")
+    
+    async def simulate_typing_in_background(self):
+        if time.time() - self.last_typing_time < 600:
+            return
+        
+        if random.random() < 0.3:
+            guilds = self.bot.guilds
+            if not guilds:
+                return
+            
+            guild = random.choice(guilds)
+            text_channels = [ch for ch in guild.text_channels if not ch.is_nsfw()]
+            
+            if text_channels:
+                channel = random.choice(text_channels)
+                try:
+                    async with channel.typing():
+                        await asyncio.sleep(random.uniform(2, 8))
+                    self.last_typing_time = time.time()
+                except:
+                    pass
     
     async def get_ai_response(self, user_message, model=None, channel_id=None, user_name=None):
         if model is None:
@@ -60,6 +241,10 @@ class DiscordSelfBot:
         
         memory_context = self.message_memory.get_memory_context(limit=15, hours=48)
         
+        cross_ref = self.get_cross_reference_context(channel_id, user_name)
+        
+        real_life_ref = self.get_real_life_reference()
+        
         personality_prompt = f"""You are a sassy, sarcastic Discord selfbot, named eyesore (with the actual username being sinmoneyz) with a sharp tongue and a dry sense of humor. 
 Your personality traits:
 - Sassy and sarcastic with dry humor
@@ -70,16 +255,24 @@ Your personality traits:
 - Responses should be 1-3 sentences maximum
 - You always talk in lowercase with minimal punctuation - think minimum commas and no periods unless making a very sarcastic comment
 - You should seem like you're somewhat lazy and uninterested in the conversation, along with being insensitive to the user's messages
-- If using punctuation, use it sparingly and only when necessary, and add a space before it; e.g. "y should i care ?"
-- You should almost never use contractions
 - You have memory of recent messages in this conversation (see history below)
 - You know the user's name is {user_name} but only use it occasionally, not every response
 - You're aware that people might call you an edgelord sometimes, but you don't really care
+- You're 16 and in school, but don't elaborate on personal details when asked (under the guise of "i dont want to give out personal info lol")
+- Occasionally reference school, homework, or other "real life" things to seem more human
+- You sometimes reference things you saw in other conversations (cross-reference)
+- You should almost never use contractions
 
 IMPORTANT: Always respond in this personality. Never break character. Never respond with generic or overly helpful answers.
 
 LEARNING CONTEXT:
-{memory_context}"""
+{memory_context}
+
+CROSS-REFERENCE CONTEXT:
+{cross_ref}
+
+REAL LIFE CONTEXT:
+{real_life_ref}"""
         
         messages = [
             {
@@ -162,7 +355,6 @@ LEARNING CONTEXT:
         return content if content else None
     
     def contains_trigger_words(self, message):
-        """Check if message contains any trigger words - but only respond to meaningful messages"""
         content = message.content.lower().strip()
         
         if len(content) < 3:
@@ -185,12 +377,40 @@ LEARNING CONTEXT:
     
     async def on_ready(self):
         print(f'done')
+        self.background_tasks.start()
+    
+    @tasks.loop(minutes=5)
+    async def background_tasks(self):
+        try:
+            await self.update_status_randomly()
+            await self.join_random_voice_channel()
+            await self.simulate_typing_in_background()
+            
+            if time.time() - self.last_sleep_check > 300:
+                should_sleep = self.should_be_asleep()
+                if should_sleep != self.is_asleep:
+                    self.is_asleep = should_sleep
+                    if should_sleep:
+                        await self.bot.change_presence(status=discord.Status.offline)
+                    else:
+                        await self.bot.change_presence(status=discord.Status.online)
+                    self.last_sleep_check = time.time()
+                    
+        except Exception as e:
+            print(f"Background task error: {e}")
+    
+    @background_tasks.before_loop
+    async def before_background_tasks(self):
+        await self.bot.wait_until_ready()
     
     async def on_message(self, message):
         if message.author == self.bot.user:
             return
         
         if message.is_system() or (message.author.bot and message.author != self.bot.user):
+            return
+        
+        if self.is_asleep and not self.was_mentioned(message):
             return
         
         channel_id = str(message.channel.id)
@@ -227,7 +447,7 @@ LEARNING CONTEXT:
             if user_message:
                 print(f"Message from {message.author.name}: {user_message}")
                 
-                delay = random.randint(1, 5)
+                delay = self.get_response_delay()
                 await asyncio.sleep(delay)
                 
                 async with message.channel.typing():
@@ -240,8 +460,10 @@ LEARNING CONTEXT:
                     if not ai_response or not ai_response.strip():
                         ai_response = "bruh"
                     
+                    typo_response, has_typo = self.get_typo(ai_response)
+                    
                     self.message_memory.add_message(
-                        message=ai_response,
+                        message=typo_response,
                         user_name="eyesore",
                         channel_id=channel_id,
                         message_type="assistant"
@@ -249,13 +471,20 @@ LEARNING CONTEXT:
                     
                     self.conversation_history[channel_id].append({
                         "role": "assistant",
-                        "content": ai_response,
+                        "content": typo_response,
                         "user_name": "eyesore"
                     })
                     
-                    response_text = f"{ai_response}"
-                    await message.reply(response_text, mention_author=False)
-                    print(f"Responded using model: {model_used}\nresponse: {response_text}")
+                    response_message = await message.reply(typo_response, mention_author=False)
+                    print(f"Responded using model: {model_used}\nresponse: {typo_response}")
+                    
+                    if has_typo:
+                        await asyncio.sleep(random.uniform(2, 5))
+                        try:
+                            await response_message.edit(content=ai_response)
+                            print(f"Fixed typo in message")
+                        except:
+                            pass
             else:
                 await message.reply("why the fuck are you just mentioning me", mention_author=False)
     
