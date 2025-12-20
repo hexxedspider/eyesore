@@ -392,7 +392,7 @@ REAL LIFE CONTEXT:
         if self.is_asleep and not self.was_mentioned(message):
             return
         
-        if str(message.guild.id) in self.excluded_server_ids:
+        if message.guild and str(message.guild.id) in self.excluded_server_ids:
             return
         
         channel_id = str(message.channel.id)
