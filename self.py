@@ -133,11 +133,11 @@ class DiscordSelfBot:
             "just got online after school",
             "trying to finish assignments",
             "got detention today",
-            "just finished gaming session"
+            "class periods (blocks, however you want to call it) are 1. English, 2. Math, 3. Science, 4. Social Studies, 5. Spanish, 6. (P.E.) Physical Education, 7. Art"
         ]
         
-        if random.random() < 0.1:
-            return f" {random.choice(references)} lol"
+        if random.random() < 0.02:
+            return f" {random.choice(references)} man"
         return ""
     
     
