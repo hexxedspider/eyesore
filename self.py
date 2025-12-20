@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from discord.ext import commands
 from message_memory import MessageMemory
 
-# Load environment variables from .env file
 load_dotenv()
 
 class DiscordSelfBot:
@@ -32,10 +31,9 @@ class DiscordSelfBot:
         self.max_history_length = 25
         
         self.trigger_words = [
-            "eyesore", "sinmoneyz", "sin", "moneyz", "poopey peepy"
+            "eyesore", "sinmoneyz", "poopey peepy"
         ]
         
-        # Initialize message memory system for learning
         self.message_memory = MessageMemory(
             memory_file="message_memory.json",
             max_memory_items=1000
@@ -60,7 +58,6 @@ class DiscordSelfBot:
         if channel_id and channel_id in self.conversation_history:
             history = self.conversation_history[channel_id][-8:]
         
-        # Get learned messages from memory for context
         memory_context = self.message_memory.get_memory_context(limit=15, hours=48)
         
         personality_prompt = f"""You are a sassy, sarcastic Discord selfbot, named eyesore (with the actual username being sinmoneyz) with a sharp tongue and a dry sense of humor. 
@@ -168,24 +165,18 @@ LEARNING CONTEXT:
         """Check if message contains any trigger words - but only respond to meaningful messages"""
         content = message.content.lower().strip()
         
-        # Skip if message is too short (likely just spam or single words)
         if len(content) < 3:
             return False
         
-        # Skip if message is just whitespace or punctuation
         if not any(c.isalnum() for c in content):
             return False
         
-        # Skip if message is just the bot's name repeated
         if content.count("eyesore") > 2 or content.count("sinmoneyz") > 2:
             return False
         
-        # Check for actual trigger words in meaningful context (case-insensitive)
         for word in self.trigger_words:
             word_lower = word.lower()
-            # Use word boundaries to avoid matching partial words
             if word_lower in content:
-                # Make sure it's not just part of a longer word or spam
                 words_in_message = content.split()
                 if any(word_lower in w for w in words_in_message):
                     return True
@@ -199,7 +190,6 @@ LEARNING CONTEXT:
         if message.author == self.bot.user:
             return
         
-        # Skip system messages and other bots
         if message.is_system() or (message.author.bot and message.author != self.bot.user):
             return
         
@@ -207,7 +197,6 @@ LEARNING CONTEXT:
         if channel_id not in self.conversation_history:
             self.conversation_history[channel_id] = []
         
-        # Store the incoming message in memory for learning
         self.message_memory.add_message(
             message=message.content,
             user_name=message.author.name,
@@ -224,7 +213,6 @@ LEARNING CONTEXT:
         if len(self.conversation_history[channel_id]) > self.max_history_length:
             self.conversation_history[channel_id] = self.conversation_history[channel_id][-self.max_history_length:]
         
-        # Check if bot was mentioned or if message contains trigger words
         should_respond = False
         user_message = None
         
@@ -249,11 +237,9 @@ LEARNING CONTEXT:
                         user_name=message.author.name
                     )
                     
-                    # Fallback if AI response is empty
                     if not ai_response or not ai_response.strip():
                         ai_response = "bruh"
                     
-                    # Store the bot's response in memory for learning
                     self.message_memory.add_message(
                         message=ai_response,
                         user_name="eyesore",
