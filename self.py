@@ -354,6 +354,25 @@ REAL LIFE CONTEXT:
         
         return False
     
+    async def should_reply_to_message(self, channel_id: str, triggering_message_id: str) -> bool:
+        """Check if there are 0-2 messages between the triggering message and now"""
+        try:
+            channel = self.bot.get_channel(int(channel_id))
+            if not channel:
+                return False
+            
+            message_count = 0
+            async for msg in channel.history(limit=50, after=discord.Object(id=triggering_message_id)):
+                if msg.author != self.bot.user:
+                    message_count += 1
+                    if message_count > 2:
+                        return False
+            
+            return message_count <= 2
+        except Exception as e:
+            print(f"Error checking message count: {e}")
+            return False
+    
     async def on_ready(self):
         print(f'done')
         self.background_tasks.start()
@@ -457,8 +476,18 @@ REAL LIFE CONTEXT:
                         "user_name": "eyesore"
                     })
                     
-                    response_message = await message.reply(typo_response, mention_author=False)
-                    print(f"Responded using model: {model_used}\nresponse: {typo_response}")
+                    if message.guild is None:
+                        response_message = await message.channel.send(typo_response)
+                        print(f"Responded using model: {model_used}\nresponse: {typo_response} (sent - DM)")
+                    else:
+                        should_send = await self.should_reply_to_message(channel_id, str(message.id))
+                        
+                        if should_send:
+                            response_message = await message.channel.send(typo_response)
+                            print(f"Responded using model: {model_used}\nresponse: {typo_response} (sent)")
+                        else:
+                            response_message = await message.reply(typo_response, mention_author=False)
+                            print(f"Responded using model: {model_used}\nresponse: {typo_response} (replied)")
                     
                     if has_typo:
                         await asyncio.sleep(random.uniform(2, 5))
