@@ -34,7 +34,7 @@ class DiscordSelfBot:
         self.max_history_length = 25
         
         self.trigger_words = [
-            "eyesore", "sinmoneyz", "sin", "moneyz", "poopey peepy"
+            "eyesore", "sinmoneyz", "poopey peepy"
         ]
         
         self.excluded_server_ids = [
