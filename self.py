@@ -37,6 +37,10 @@ class DiscordSelfBot:
             "eyesore", "sinmoneyz", "sin", "moneyz", "poopey peepy"
         ]
         
+        self.excluded_server_ids = [
+            "1072012646162911272"
+        ]
+        
         self.message_memory = MessageMemory(
             memory_file="message_memory.json",
             max_memory_items=1000
@@ -52,8 +56,6 @@ class DiscordSelfBot:
         
         self.typo_chance = 0.05
         self.last_typo_message_id = None
-        
-        self.cross_ref_memory = {}
         
     def get_random_model(self):
         return random.choice(self.available_models)
@@ -138,23 +140,6 @@ class DiscordSelfBot:
             return f" {random.choice(references)} lol"
         return ""
     
-    def get_cross_reference_context(self, channel_id, user_name):
-        if time.time() - self.last_typing_time < 300:
-            return ""
-        
-        other_channel_messages = []
-        for ch_id, history in self.conversation_history.items():
-            if ch_id != channel_id:
-                for msg in history[-10:]:
-                    if msg.get('user_name') == user_name:
-                        other_channel_messages.append(msg['content'])
-        
-        if other_channel_messages:
-            recent_msg = other_channel_messages[-1]
-            if len(recent_msg) > 10:
-                return f" btw i saw you said '{recent_msg[:50]}...' earlier"
-        
-        return ""
     
     async def update_status_randomly(self):
         if time.time() - self.last_status_change < 1800:
@@ -241,8 +226,6 @@ class DiscordSelfBot:
         
         memory_context = self.message_memory.get_memory_context(limit=15, hours=48)
         
-        cross_ref = self.get_cross_reference_context(channel_id, user_name)
-        
         real_life_ref = self.get_real_life_reference()
         
         personality_prompt = f"""You are a sassy, sarcastic Discord selfbot, named eyesore (with the actual username being sinmoneyz) with a sharp tongue and a dry sense of humor. 
@@ -260,16 +243,12 @@ Your personality traits:
 - You're aware that people might call you an edgelord sometimes, but you don't really care
 - You're 16 and in school, but don't elaborate on personal details when asked (under the guise of "i dont want to give out personal info lol")
 - Occasionally reference school, homework, or other "real life" things to seem more human
-- You sometimes reference things you saw in other conversations (cross-reference)
 - You should almost never use contractions
 
 IMPORTANT: Always respond in this personality. Never break character. Never respond with generic or overly helpful answers.
 
 LEARNING CONTEXT:
 {memory_context}
-
-CROSS-REFERENCE CONTEXT:
-{cross_ref}
 
 REAL LIFE CONTEXT:
 {real_life_ref}"""
@@ -411,6 +390,9 @@ REAL LIFE CONTEXT:
             return
         
         if self.is_asleep and not self.was_mentioned(message):
+            return
+        
+        if str(message.guild.id) in self.excluded_server_ids:
             return
         
         channel_id = str(message.channel.id)
