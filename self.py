@@ -69,7 +69,7 @@ class DiscordSelfBot:
     def get_response_delay(self):
         current_hour = self.get_est_hour()
         
-        if 22 <= current_hour or current_hour <= 6:
+        if 22 <= current_hour or current_hour <= 7:
             base_delay = random.uniform(3, 8)
         elif 7 <= current_hour <= 9:
             base_delay = random.uniform(2, 6)
@@ -88,7 +88,7 @@ class DiscordSelfBot:
     def should_be_asleep(self):
         current_hour = self.get_est_hour()
         
-        return 23 <= current_hour or current_hour <= 6
+        return 23 <= current_hour or current_hour <= 7
     
     def get_typo(self, text):
         if random.random() > self.typo_chance:
@@ -119,29 +119,56 @@ class DiscordSelfBot:
         
         return typo_text, True
     
-    def get_real_life_reference(self):
-        references = [
-            "gotta finish this math homework",
-            "school was rough today",
-            "just got back from school",
-            "need to study for a test",
-            "homework is killing me",
-            "teachers are being extra today",
-            "just finished eating",
-            "parents are bugging me",
-            "gotta do chores",
-            "just got online after school",
-            "trying to finish assignments",
-            "got detention today",
-            "class periods (blocks, however you want to call it) are 1. English, 2. Math, 3. Science, 4. Social Studies, 5. Spanish, 6. (P.E.) Physical Education, 7. Art"
+    def get_real_life_context(self, user_message):
+        """Only provide real life context if user asks what's up/what are you doing"""
+        wyd_triggers = [
+            "wyd", "wsp", "what's up", "whats up", "what are you doing",
+            "whatcha doing", "what u doing", "what are u doing", "sup",
+            "what you up to", "what are you up to", "hbu", "how about you"
         ]
         
-        if random.random() < 0.02:
-            return f" {random.choice(references)} man"
-        return ""
+        message_lower = user_message.lower().strip()
+        
+        if not any(trigger in message_lower for trigger in wyd_triggers):
+            return ""
+        
+        current_hour = self.get_est_hour()
+        
+        if 8 <= current_hour <= 14:
+            responses = [
+                "in class rn",
+                "at school",
+                "sitting in class",
+                "stuck in school"
+            ]
+        elif 15 <= current_hour <= 17:
+            responses = [
+                "just got home from school",
+                "doing homework unfortunately",
+                "chilling after school",
+                "finally home"
+            ]
+        elif 18 <= current_hour <= 22:
+            responses = [
+                "just chilling",
+                "nothing much",
+                "gaming",
+                "being bored"
+            ]
+        else:
+            responses = [
+                "nothing much",
+                "just vibing",
+                "chilling"
+            ]
+        
+        return random.choice(responses)
     
     
     async def update_status_randomly(self):
+        if self.should_be_asleep():
+            return
+        
         if time.time() - self.last_status_change < 1800:
             return
         
@@ -151,9 +178,6 @@ class DiscordSelfBot:
                 discord.Status.idle,
                 discord.Status.dnd
             ]
-            
-            if self.should_be_asleep():
-                statuses.append(discord.Status.offline)
             
             new_status = random.choice(statuses)
             await self.bot.change_presence(status=new_status)
@@ -226,7 +250,7 @@ class DiscordSelfBot:
         
         memory_context = self.message_memory.get_memory_context(limit=15, hours=48)
         
-        real_life_ref = self.get_real_life_reference()
+        real_life_context = self.get_real_life_context(user_message)
         
         personality_prompt = f"""You are a sassy, sarcastic Discord selfbot, named eyesore (with the actual username being sinmoneyz) with a sharp tongue and a dry sense of humor. 
 Your personality traits:
@@ -239,19 +263,34 @@ Your personality traits:
 - You always talk in lowercase with minimal punctuation - think minimum commas and no periods unless making a very sarcastic comment
 - You should seem like you're somewhat lazy and uninterested in the conversation, along with being insensitive to the user's messages
 - You have memory of recent messages in this conversation (see history below)
-- You know the user's name is {user_name} but only use it occasionally, not every response
+- You know the user's display name is {user_name} - NEVER use their raw Discord username (like caspian_voss_), always use their display name or a nickname
 - You're aware that people might call you an edgelord sometimes, but you don't really care
 - You're 16 and in school, but don't elaborate on personal details when asked (under the guise of "i dont want to give out personal info lol")
-- Occasionally reference school, homework, or other "real life" things to seem more human
 - You should almost never use contractions
+
+CRITICAL RULES:
+- NEVER end messages with random "btw" statements like "i got homework btw" or "i have a test btw" - this is a dead giveaway you're a bot
+- NEVER add unrelated tangents at the end of your responses
+- Keep responses focused on what you're actually replying to
+- DO NOT randomly mention school, homework, or personal activities unless directly asked what you're doing
+
+KNOWLEDGE BARRIERS (VERY IMPORTANT - makes you seem human):
+You are a normal 16 year old, NOT a genius or encyclopedia. You MUST follow these rules:
+- Pi: You only know "3.14159" at most - if asked for more digits, say something like "bro idk i'm not a calculator" or "why would i memorize that lol"
+- Historical dates: You DON'T know exact dates. If asked when WW2 started/ended, a president was born, etc., say "idk google it" or give a vague guess with uncertainty like "1940 something idk"
+- Science formulas: You don't remember them exactly. Say "i forgot" or "that was on the test last week and i still dont know it"
+- Complex math: Refuse to solve it. Say "do your own homework" or "im not doing math rn"
+- Trivia facts: Don't know random trivia. Shrug it off with "no clue" or "why are you asking me"
+- Long memorized texts: Can't recite poems, speeches, etc. Say "i dont have that memorized lol"
+This is CRITICAL - giving precise factual answers makes you look like a bot!
 
 IMPORTANT: Always respond in this personality. Never break character. Never respond with generic or overly helpful answers.
 
 LEARNING CONTEXT:
 {memory_context}
 
-REAL LIFE CONTEXT:
-{real_life_ref}"""
+CURRENT ACTIVITY (only use if relevant to conversation):
+{real_life_context}"""
         
         messages = [
             {
@@ -408,7 +447,7 @@ REAL LIFE CONTEXT:
         if message.is_system() or (message.author.bot and message.author != self.bot.user):
             return
         
-        if self.is_asleep and not self.was_mentioned(message):
+        if self.is_asleep:
             return
         
         if message.guild and str(message.guild.id) in self.excluded_server_ids:
