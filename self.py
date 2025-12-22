@@ -124,12 +124,58 @@ class DiscordSelfBot:
         
         return typo_text, True
     
+    def get_current_school_period(self):
+        """Calculate current school period based on EST time.
+        Schedule: 7 periods (1 hour each), 30 min lunch after period 4
+        - Period 1: 8:00-9:00 (English)
+        - Period 2: 9:00-10:00 (Math)
+        - Period 3: 10:00-11:00 (Science)
+        - Period 4: 11:00-12:00 (Social Studies)
+        - Lunch: 12:00-12:30
+        - Period 5: 12:30-13:30 (Spanish)
+        - Period 6: 13:30-14:30 (P.E.)
+        - Period 7: 14:30-15:30 (Art)
+        """
+        est_offset = -5
+        utc_now = datetime.utcnow()
+        est_now = utc_now + timedelta(hours=est_offset)
+        
+        hour = est_now.hour
+        minute = est_now.minute
+        time_in_minutes = hour * 60 + minute
+        
+        schedule = {
+            "period_1": (480, 540, "english", 1),       # 8:00-9:00
+            "period_2": (540, 600, "math", 2),          # 9:00-10:00
+            "period_3": (600, 660, "science", 3),       # 10:00-11:00
+            "period_4": (660, 720, "social studies", 4),# 11:00-12:00
+            "lunch": (720, 750, "lunch", 0),            # 12:00-12:30
+            "period_5": (750, 810, "spanish", 5),       # 12:30-13:30
+            "period_6": (810, 870, "pe", 6),            # 13:30-14:30
+            "period_7": (870, 930, "art", 7),           # 14:30-15:30
+        }
+        
+        for period_name, (start, end, subject, period_num) in schedule.items():
+            if start <= time_in_minutes < end:
+                return {
+                    "in_school": True,
+                    "period": period_num,
+                    "subject": subject,
+                    "is_lunch": period_name == "lunch"
+                }
+        
+        if time_in_minutes < 480:
+            return {"in_school": False, "status": "before_school"}
+        else:
+            return {"in_school": False, "status": "after_school"}
+    
     def get_real_life_context(self, user_message):
         """Only provide real life context if user asks what's up/what are you doing"""
         wyd_triggers = [
             "wyd", "wsp", "what's up", "whats up", "what are you doing",
             "whatcha doing", "what u doing", "what are u doing", "sup",
-            "what you up to", "what are you up to", "hbu", "how about you"
+            "what you up to", "what are you up to", "hbu", "how about you",
+            "what period", "what class", "which period", "which class"
         ]
         
         message_lower = user_message.lower().strip()
@@ -137,35 +183,52 @@ class DiscordSelfBot:
         if not any(trigger in message_lower for trigger in wyd_triggers):
             return ""
         
-        current_hour = self.get_est_hour()
+        school_status = self.get_current_school_period()
         
-        if 8 <= current_hour <= 14:
+        if school_status.get("in_school"):
+            if school_status.get("is_lunch"):
+                responses = [
+                    "at lunch rn",
+                    "eating lunch",
+                    "lunch break finally"
+                ]
+            else:
+                period = school_status["period"]
+                subject = school_status["subject"]
+                responses = [
+                    f"in period {period} rn ({subject})",
+                    f"stuck in {subject} class",
+                    f"period {period} - {subject}",
+                    f"in {subject} rn"
+                ]
+        elif school_status.get("status") == "before_school":
             responses = [
-                "in class rn",
-                "at school",
-                "sitting in class",
-                "stuck in school"
+                "getting ready for school",
+                "about to head to school",
+                "not at school yet"
             ]
-        elif 15 <= current_hour <= 17:
-            responses = [
-                "just got home from school",
-                "doing homework unfortunately",
-                "chilling after school",
-                "finally home"
-            ]
-        elif 18 <= current_hour <= 22:
-            responses = [
-                "just chilling",
-                "nothing much",
-                "gaming",
-                "being bored"
-            ]
-        else:
-            responses = [
-                "nothing much",
-                "just vibing",
-                "chilling"
-            ]
+        else:  # after school
+            current_hour = self.get_est_hour()
+            if current_hour <= 17:
+                responses = [
+                    "just got home from school",
+                    "doing homework unfortunately",
+                    "chilling after school",
+                    "finally home"
+                ]
+            elif current_hour <= 22:
+                responses = [
+                    "just chilling",
+                    "nothing much",
+                    "gaming",
+                    "being bored"
+                ]
+            else:
+                responses = [
+                    "nothing much",
+                    "just vibing",
+                    "chilling"
+                ]
         
         return random.choice(responses)
     
@@ -482,7 +545,13 @@ CURRENT ACTIVITY (only use if relevant to conversation):
         user_message = None
         response_reason = None
         
-        if self.was_mentioned(message):
+        # Priority 0: Always respond to DMs
+        if message.guild is None:
+            user_message = message.content
+            should_respond = True
+            response_reason = "dm"
+        
+        elif self.was_mentioned(message):
             user_message = self.extract_content_after_mention(message)
             should_respond = True
             response_reason = "mentioned"
