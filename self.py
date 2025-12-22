@@ -57,6 +57,11 @@ class DiscordSelfBot:
         self.typo_chance = 0.05
         self.last_typo_message_id = None
         
+        # Track when bot last responded per channel for passive engagement
+        self.last_response_time = {}  # channel_id -> timestamp
+        self.passive_response_chance = 0.03  # 3% chance to respond in active convos
+        self.active_convo_window = 600  # 10 minutes
+        
     def get_random_model(self):
         return random.choice(self.available_models)
     
@@ -475,17 +480,39 @@ CURRENT ACTIVITY (only use if relevant to conversation):
         
         should_respond = False
         user_message = None
+        response_reason = None
         
         if self.was_mentioned(message):
             user_message = self.extract_content_after_mention(message)
             should_respond = True
+            response_reason = "mentioned"
+        
         elif self.contains_trigger_words(message):
             user_message = message.content
             should_respond = True
+            response_reason = "trigger"
+        
+        elif message.reference and message.reference.message_id:
+            try:
+                ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                if ref_msg.author == self.bot.user:
+                    user_message = message.content
+                    should_respond = True
+                    response_reason = "reply-to-bot"
+            except:
+                pass
+        
+        elif channel_id in self.last_response_time:
+            time_since_last = time.time() - self.last_response_time[channel_id]
+            if time_since_last < self.active_convo_window:
+                if random.random() < self.passive_response_chance:
+                    user_message = message.content
+                    should_respond = True
+                    response_reason = "passive"
         
         if should_respond:
             if user_message:
-                print(f"Message from {message.author.name}: {user_message}")
+                print(f"Message from {message.author.name} ({response_reason}): {user_message}")
                 
                 delay = self.get_response_delay()
                 await asyncio.sleep(delay)
@@ -514,6 +541,8 @@ CURRENT ACTIVITY (only use if relevant to conversation):
                         "content": typo_response,
                         "user_name": "eyesore"
                     })
+                    
+                    self.last_response_time[channel_id] = time.time()
                     
                     if message.guild is None:
                         response_message = await message.channel.send(typo_response)
