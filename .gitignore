@@ -2,3 +2,13 @@
 eyesore
 message_memory.json
 website
+
+# python script that uses pyinstaller, i'll probably copy paste later if anyone asks to see it (makes sense if u want to see about the exe, since pyinstaller is often flagged on virustotal)
+build.py
+dist
+*.spec
+
+eyesore_zipped.zip
+
+*.json
+todo
